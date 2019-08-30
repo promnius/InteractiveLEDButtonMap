@@ -3,21 +3,21 @@
 // Kyle Mayer
 // 8/28/2019
 
-
 // LIBRARY INCLUDES
 #include <SPI.h>              // We use this library within the MCP23S17 library, so it must be called here.
 #include <MCP23S17.h>
 #include <EEPROM.h>
-#include <ADC.h>
 #include <WS2812Serial.h>
-#include <Adafruit_NeoPixel.h>
 
+// program constants
 #define RED    0x160000
 #define GREEN  0x001600
 #define BLUE   0x000016
 #define YELLOW 0x101400
 #define PINK   0x120009
 #define ORANGE 0x100400
+
+SPISettings mySetting(1000,MSBFIRST,SPI_MODE0);
 
 const uint8_t PROGMEM gamma8[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -57,20 +57,10 @@ int intButtonPointer = 0; // helper variable for indexing into the button array
 
 // fancy variables for LEDs
 const int numled = 20;
-//byte drawingMemory[numled*3];         //  3 bytes per LED
-//DMAMEM byte displayMemory[numled*12]; // 12 bytes per LED
-//WS2812Serial leds(numled, displayMemory, drawingMemory, pinLEDDATA, WS2812_RGB);
-// this library doesn't work because we have 2811 leds
-// Declare our NeoPixel strip object:
-Adafruit_NeoPixel strip(numled, pinLEDDATA, NEO_RGB + NEO_KHZ400);
-// Argument 1 = Number of pixels in NeoPixel strip
-// Argument 2 = Arduino pin number (most are valid)
-// Argument 3 = Pixel type flags, add together as needed:
-//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
-//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
-//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
-//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
+byte drawingMemory[numled*3];         //  3 bytes per LED
+DMAMEM byte displayMemory[numled*12]; // 12 bytes per LED
+WS2812Serial leds(numled, displayMemory, drawingMemory, pinLEDDATA, WS2812_RGB);
+
 
 // PORT EXPANDERS
 // there might be a cleaner way to do this with an array or a list or a new object type
@@ -87,6 +77,8 @@ MCP mcpButtons7  (7, pinCS_BUTTONS);
 
 void setup() {
 
+  pinMode(pinLEDDATA, OUTPUT);
+
   Serial.begin(9600);
 
   // initializing hardware pins (and default states where necessary).
@@ -94,31 +86,30 @@ void setup() {
 
   loadStateFromDisk();
 
-  //leds.begin();
-  pinMode(6, INPUT); // what the actual frack like I don't even understand . . . this library breaks if this specific pin is an output . . .
-  // since this is the default pin used by the library, I wonder if some buried code has it hardcoded . . .
-  
-  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();            // Turn OFF all pixels ASAP
-  //strip.setBrightness(50); // Set BRIGHTNESS to about 1/5 (max = 255)
-  //leds.setBrightness(64);
-  //colorWipe(RED,1000);
+  leds.begin();
+
+  colorWipe(RED,200);
 
   updateLEDs();
 }
 
 void loop() {
+  //intButtonValue = mcpButtons0.digitalRead();
+  //Serial.println(intButtonValue);
   checkButtons();
-  interpretButtons(); // this will handle all the driving of the appropriate solenoids and the LEDs.
+  //interpretButtons();
   delay(30); // set the refresh rate to roughly 30hz. The button handler is counting on this (and the low CPU usage of this
   // project will keep it roughly right), so don't mess with this or add any delays elsewhere unless you are ok with the buttons
   // not responding.
   //Serial.println("Loop!");
-  Serial.println(intButtonStatus[0]);
+  Serial.println(intButtonStatus[42]);
+  //delay(100);
 }
 
 // set up all the port expanders for beginning their journey, to be called once.
 void initializePortExpanders(){  
+  SPI.begin();
+  SPI.beginTransaction(mySetting);
   mcpButtons0.begin();
   mcpButtons1.begin();
   mcpButtons2.begin();
@@ -127,6 +118,8 @@ void initializePortExpanders(){
   mcpButtons5.begin();
   mcpButtons6.begin();
   mcpButtons7.begin();
+
+  SPI.beginTransaction(mySetting);
             
   mcpButtons0.pinMode(0xFFFF);     // Use word-write mode to set all of the pins on inputchip to be inputs
   mcpButtons0.pullupMode(0xFFFF);  // Use word-write mode to Turn on the internal pull-up resistors.
@@ -161,29 +154,40 @@ void initializePortExpanders(){
 // and time the button has been held if this function is called at regular intervals. There are far better 
 // ways of doing this and existing libraries to manage it, but this is pretty simple and hardware specific.
 // it will not increment a button past 1000 to prevent overflows (who cares if it has been held down for days?)
+
+int mask = 0;
 void checkButtons(){
   for (int counter=0;counter<8;counter++){// scan through all 8 port expanders
     switch(counter){
       case 0:
         intButtonValue = mcpButtons0.digitalRead();
+        break;
       case 1:
         intButtonValue = mcpButtons1.digitalRead();
+        break;
       case 2:
         intButtonValue = mcpButtons2.digitalRead();
+        break;
       case 3:
         intButtonValue = mcpButtons3.digitalRead();
+        break;
       case 4:
         intButtonValue = mcpButtons4.digitalRead();
+        break;
       case 5:
         intButtonValue = mcpButtons5.digitalRead();
+        break;
       case 6:
         intButtonValue = mcpButtons6.digitalRead();
+        break;
       case 7:
         intButtonValue = mcpButtons7.digitalRead();
-    }
+        break;
+    }    
     for (int i=0; i<16; i++){
-      intButtonPointer = i + 8 * counter;
-      if (intButtonValue&(0b0000000000000001 << i) == 1){ // the button is pressed
+      intButtonPointer = i + 16 * counter;
+      mask = 0b0000000000000001 << i;
+      if ((intButtonValue & mask) == mask){ // the button is pressed
         if (intButtonStatus[intButtonPointer] < 1){
           intButtonStatus[intButtonPointer] = 1;
         } else {
@@ -256,8 +260,8 @@ void loadStateFromDisk(){
 // basic display function to test LEDs
 void colorWipe(int color, int wait) {
   for (int i=0; i < numled; i++) {
-    strip.setPixelColor(i, 255,255,0);
-    strip.show();
+    leds.setPixel(i, color);
+    leds.show();
     delay(wait);
   }
 }

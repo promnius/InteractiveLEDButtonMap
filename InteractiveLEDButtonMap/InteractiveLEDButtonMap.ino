@@ -4,13 +4,15 @@
 // 8/28/2019
 
 // HARDCODED PANEL DEFINITIONS:
+const int numled = 20; 
 // First, define all the regions by absolute button number. There MUST NOT be repeats, or the code will not compile
 // (it wouldn't make much sense to have multiple regions recorded with a single button, if that is the case rename the region
 // even if only for the software.
-#define REGION1 38
-#define REGION2 37
-#define REGION3 36
-#define REGION4 35
+#define NOREGION -1
+#define REGION1 47
+#define REGION2 42
+#define REGION3 32
+#define REGION4 33
 // next, define all the LEDs:
 // each LED needs to know: which region it belongs to, how it scales brightness with num button presses (scale rate and offset if it doesn't turn on right away or is always on from the beginning)
 // these last two can probably be sorted into tiers, ie. T1 T2 and T3 with fixed numbers for each tier
@@ -20,6 +22,37 @@
 // and just increment them based on that.
 // target hue, if different from the standard animation.
 
+// this is sort of a hacked way of implementing a struct- we are just densly packing data into an array.
+// it works . . . as long as you don't get off by one anywhere. a better way to do this would be to create
+// an LED object with get and set methods, but that takes more effort and possibly more memory.
+// in this array, the first dimension is the LED number, the second dimension is 3 values: attached button, scale rate, offset.
+// scale rate is measured in how many button presses it takes to reach full scale, so a larger number means slower growth.
+// offset is measured in button presses before the light starts to respond, so 0 means start with first press, and a negative
+// value means it starts on before any buttons are pressed.
+// declaring this table here means every entry MUST be populated. If the light is not used in the panel, just set button association
+// to NOREGION and leave the other entries as anything.
+long LEDLookupTable[numled][3]={
+  {0,0,0}, // LED0
+  {0,0,0}, // LED1
+  {0,0,0}, // LED2
+  {0,0,0}, // LED3
+  {0,0,0}, // LED4
+  {0,0,0}, // LED5
+  {0,0,0}, // LED6
+  {REGION1,199,867}, // LED7
+  {0,0,0}, // LED8
+  {0,0,0}, // LED9
+  {0,0,0}, // LED10
+  {0,0,0}, // LED11
+  {0,0,0}, // LED12
+  {0,0,0}, // LED13
+  {0,0,0}, // LED14
+  {0,0,0}, // LED15
+  {0,0,0}, // LED16
+  {0,0,0}, // LED17
+  {0,0,0}, // LED18
+  {0,0,0}}; // LED19
+  
 // LIBRARY INCLUDES
 #include <SPI.h>              // We use this library within the MCP23S17 library, so it must be called here.
 #include <MCP23S17.h>
@@ -89,7 +122,6 @@ long lngButtonDisplayCounter[numButtons]; // same as the last counter, but this 
 long lngButtonLastPressedTime[numButtons]; // time in ms that the button was last pressed. important for blink decay algorithms
 
 // fancy variables for LEDs
-const int numled = 20;
 byte rawDrawingMemory[numled*3];         //  3 bytes per LED
 byte drawingMemory[numled*3];         //  3 bytes per LED
 DMAMEM byte displayMemory[numled*12]; // 12 bytes per LED
@@ -121,6 +153,9 @@ void setup() {
   leds.show();
   initializeTimers();
   updateLEDs(); // establish the known state.
+  //Serial.println("Example look up table entry: ");
+  //Serial.print(LEDLookupTable[7][0]);Serial.print(",");Serial.print(LEDLookupTable[7][1]);Serial.print(",");Serial.println(LEDLookupTable[7][2]);
+  //Serial.println();
 }
 
 void loop() {
@@ -147,7 +182,7 @@ void initializePortExpanders(){
   mcpButtons6.begin();
   mcpButtons7.begin();
 
-  SPI.beginTransaction(mySetting);
+  SPI.beginTransaction(mySetting); // not sure if mcp.begin overwrites my settings or not
             
   mcpButtons0.pinMode(0xFFFF);     // Use word-write mode to set all of the pins on inputchip to be inputs
   mcpButtons0.pullupMode(0xFFFF);  // Use word-write mode to Turn on the internal pull-up resistors.
@@ -262,16 +297,27 @@ void interpretButtons(){
 
 
 // HARDWARE SPECIFIC FUNCTION
-// Currently, this function updates the LEDs to match the status held in the intSolenoidStatus register.
-// it doesn't actually modify the solenoids, so if a change is made to the register a command to modify the 
-// solenoid must be sent separately.
-// it is hardware specific because certain LEDs have real world significance, so we are not just matching LED0 to
-// solenoid0, etc.
-// there could be a more intelligent way to do this . . . only updating the LEDs that changed, and only calling
-// this when some LEDs changed, but this is simple too.
-// could also be more efficient by building a mask and talking to the port expanders once.
+// This function handles all animation rendering and sending data out to the LEDs.
+// there are a lot of different ways to do this, but the way I have selected is to do all the animation
+// math directly in place in the LED buffers (using a duplicate buffer so that gamma correction is non-
+// destructive). There are a lot of disadvantages to this, including timing being imprecise, animations being
+// heavily hardcoded (it could be a lot of work to modify or replace certain animations), etc. But for the 
+// animations we are looking at, this is the fastest, easiest method to implement.
+// In the future, consider trying to implement animations from an existing library such as ALA. I choose not
+// to do that here because one of the things that is very important to my animations is the totally asyncronous
+// nature of the blinking, which would require a lot of timing and callbacks with a library like that. This method
+// just increments everythign by a frame every time it is called.
+int displayCount = 0;
 void updateLEDs(){
-
+  for (int i = 0; i < numled; i++){
+    intDisplayCount = lngButtonDisplayCount[LEDLookupTable[i][0]];
+    lngLastPress = lng[LEDLookupTable[i][0]];
+    targetHue = // based on number of button presses and LED scaling factors
+    blinkIncrement = // based on time since last press and the target hue
+    // also need to handle time on here
+    // finally, if time on is 0 and blink increment is not 0, increment the actual color
+    // set time on if we have reached max hue.
+  }
 }
 
 // saves all presets to disk. Could be more efficient and only save the ones that have changed, or swap up the address used
@@ -306,6 +352,7 @@ void resetButtonPresses(){
 // This function is hardcoded and must be updated to match the panel definition.
 // It prints all of the current values by region, for all existing regions.
 void printButtonPressesByRegion(){
+  Serial.println("All recorded data:");
   for (int i = 0; i < numButtons; i++){
     booReadyToPrint = false;
     switch(i){
@@ -329,17 +376,18 @@ boolean booDevMode = false;
 void interpretSerialCommands(){
   if (Serial.available() > 0){
     serialCommand = Serial.read();
-    Serial.print("I Read: "); Serial.println(serialCommand);
+    //Serial.print("I Read: "); Serial.println(serialCommand);
+    Serial.println(); // create some white space
     if(serialCommand == '?'){
       printButtonPressesByRegion();
     }
-    else if (serialCommand == "R"){ // total system reset, irreversable
+    else if (serialCommand == 'R'){ // total system reset, irreversable
       resetButtonPresses();
     }
-    else if (serialCommand == "S"){ // save command, before power down
+    else if (serialCommand == 'S'){ // save command, before power down
       saveStateToDisk();
     }
-    else if (serialCommand == "D"){ // toggle dev mode
+    else if (serialCommand == 'D'){ // toggle dev mode
       booDevMode = !booDevMode;
       if (booDevMode == true){Serial.println("Development mode now active");}
       else{Serial.println("Development mode turned off");}

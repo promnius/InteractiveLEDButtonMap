@@ -1,4 +1,4 @@
-
+// need to handle overflow from millis and math
 
 // Kyle Mayer
 // 8/28/2019
@@ -22,6 +22,16 @@ const int numled = 20;
 // and just increment them based on that.
 // target hue, if different from the standard animation.
 
+
+#define T1SCALE 30
+#define T1OFFSET 0
+#define T2SCALE 30
+#define T2OFFSET 10
+#define T3SCALE 30
+#define T3OFFSET 20
+#define T4SCALE 30
+#define T4OFFSET 30
+
 // this is sort of a hacked way of implementing a struct- we are just densly packing data into an array.
 // it works . . . as long as you don't get off by one anywhere. a better way to do this would be to create
 // an LED object with get and set methods, but that takes more effort and possibly more memory.
@@ -31,27 +41,28 @@ const int numled = 20;
 // value means it starts on before any buttons are pressed.
 // declaring this table here means every entry MUST be populated. If the light is not used in the panel, just set button association
 // to NOREGION and leave the other entries as anything.
+// ideally, this AND the button definitions would be loaded from a configuration file at some point.
 long LEDLookupTable[numled][3]={
-  {0,0,0}, // LED0
-  {0,0,0}, // LED1
-  {0,0,0}, // LED2
-  {0,0,0}, // LED3
-  {0,0,0}, // LED4
-  {0,0,0}, // LED5
-  {0,0,0}, // LED6
-  {REGION1,199,867}, // LED7
-  {0,0,0}, // LED8
-  {0,0,0}, // LED9
-  {0,0,0}, // LED10
-  {0,0,0}, // LED11
-  {0,0,0}, // LED12
-  {0,0,0}, // LED13
-  {0,0,0}, // LED14
-  {0,0,0}, // LED15
-  {0,0,0}, // LED16
-  {0,0,0}, // LED17
-  {0,0,0}, // LED18
-  {0,0,0}}; // LED19
+  {REGION3,T3SCALE,T3OFFSET}, // LED0
+  {REGION3,T2SCALE,T2OFFSET}, // LED1
+  {REGION3,T2SCALE,T2OFFSET}, // LED2
+  {REGION3,T2SCALE,T2OFFSET}, // LED3
+  {REGION3,T1SCALE,T1OFFSET}, // LED4
+  {REGION3,T2SCALE,T2OFFSET}, // LED5
+  {REGION1,T2SCALE,T2OFFSET}, // LED6
+  {REGION1,T2SCALE,T2OFFSET}, // LED7
+  {REGION1,T1SCALE,T1OFFSET}, // LED8
+  {REGION1,T2SCALE,T2OFFSET}, // LED9
+  {REGION2,T1SCALE,T1OFFSET}, // LED10
+  {REGION2,T2SCALE,T2OFFSET}, // LED11
+  {REGION2,T3SCALE,T3OFFSET}, // LED12
+  {REGION2,T4SCALE,T4OFFSET}, // LED13
+  {NOREGION,0,0}, // LED14
+  {REGION4,T3SCALE,T3OFFSET}, // LED15
+  {REGION4,T2SCALE,T2OFFSET}, // LED16
+  {REGION4,T2SCALE,T2OFFSET}, // LED17
+  {REGION4,T1SCALE,T1OFFSET}, // LED18
+  {REGION4,T2SCALE,T2OFFSET}}; // LED19
   
 // LIBRARY INCLUDES
 #include <SPI.h>              // We use this library within the MCP23S17 library, so it must be called here.
@@ -67,8 +78,8 @@ long LEDLookupTable[numled][3]={
 #define PINK   0x120009
 #define ORANGE 0x100400
 const uint8_t PROGMEM gamma8[] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
     1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
     2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
     5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
@@ -94,10 +105,10 @@ const unsigned short pinLEDDATA = 1;
 // ANIMATION CONTROL VARIABLES
 int minBlinkSpeed = 3000; // max time in ms. that an LED will take to fade from on to off and back to on. after this time is reached,
 // the time held at on will begin to increase. once the time held on reaches maximum, the LED will convert to always on (ie, not blinking)
-int maxBlinkSpeed = 500; // min time in ms. that an LED will take to fade from on to off and back to on. when blinkDuration is
+int maxBlinkSpeed = 250; // min time in ms. that an LED will take to fade from on to off and back to on. when blinkDuration is
 // at 0, this is the maximum speed at which the LED will blink.
 int maxBlinkHold = 1000; // max time in ms. that an LED will stay on between blinks before just converting to always on
-int maxBlinkDuration = 1000; // max time in seconds that an LED will blink for after the corresponding button is pressed.
+int maxBlinkDuration = 60; // max time in seconds that an LED will blink for after the corresponding button is pressed.
 
 // RANDOM HELPER VARIABLES
 int heartBeatCounter = 0; // only for dividing down timer2 to a visible speed
@@ -126,6 +137,8 @@ byte rawDrawingMemory[numled*3];         //  3 bytes per LED
 byte drawingMemory[numled*3];         //  3 bytes per LED
 DMAMEM byte displayMemory[numled*12]; // 12 bytes per LED
 WS2812Serial leds(numled, displayMemory, drawingMemory, pinLEDDATA, WS2812_RGB);
+int blinkDimmer[numled];
+int ledAnimationState[numled];
 
 
 // PORT EXPANDERS
@@ -307,18 +320,117 @@ void interpretButtons(){
 // to do that here because one of the things that is very important to my animations is the totally asyncronous
 // nature of the blinking, which would require a lot of timing and callbacks with a library like that. This method
 // just increments everythign by a frame every time it is called.
-int displayCount = 0;
+int intDisplayCount = 0;
+int targetRed = 0;
+int targetGreen = 0;
+int targetHue = 0;
+int targetIntensity = 0;
+int intScaleRate = 0;
+long lngLastPress = 0;
+unsigned long timeNow = 0;
+int currentBlinkSpeed = 0;
+int deltaBlinkDimmer = 0;
 void updateLEDs(){
   for (int i = 0; i < numled; i++){
-    intDisplayCount = lngButtonDisplayCount[LEDLookupTable[i][0]];
-    lngLastPress = lng[LEDLookupTable[i][0]];
-    targetHue = // based on number of button presses and LED scaling factors
-    blinkIncrement = // based on time since last press and the target hue
-    // also need to handle time on here
-    // finally, if time on is 0 and blink increment is not 0, increment the actual color
-    // set time on if we have reached max hue.
+    if (LEDLookupTable[i][0] == NOREGION){
+      targetGreen = 0;
+      targetRed = 0;
+    }
+    else{
+      intDisplayCount = lngButtonDisplayCounter[LEDLookupTable[i][0]]; // grab the value we are supposed to be displaying
+      lngLastPress = lngButtonLastPressedTime[LEDLookupTable[i][0]]; // grab the time since our associated button was last pressed
+      intDisplayCount = intDisplayCount - LEDLookupTable[i][2]; // adjust the value we are supposed to be displaying based on offset information
+      //Serial.print("(");Serial.print(i);Serial.print(",");Serial.print(intDisplayCount);Serial.print(")");
+      intScaleRate = LEDLookupTable[i][1];
+      if (intScaleRate<3){ // will cause divide by zero error
+        intScaleRate = 3;
+      }
+      if (intDisplayCount < 0){ // negative displays don't make sense
+        intDisplayCount = 0;
+      }
+      if (intDisplayCount< (intScaleRate/3)){ // first third scales intensity, second 2 thirds scales hue
+        //Serial.print(":");Serial.print("G");
+        targetGreen = (255*(long)intDisplayCount)/(intScaleRate/3); // linear increase in intensity
+        targetRed = 0;
+      }
+      else if (intDisplayCount < intScaleRate){ // second two thirds scales hue, intensity is max
+        //Serial.print(":");Serial.print("R");
+        intDisplayCount = intDisplayCount-(intScaleRate/3);
+        targetRed = (255*(long)intDisplayCount)/((intScaleRate*2)/3); // linear shift in hue
+        targetGreen = 255 - targetRed;
+      }
+      else{
+        // beyond maximum
+        targetGreen = 0;
+        targetRed = 255;
+      }
+    }
+    if (targetRed == 0 && targetGreen == 0 && intDisplayCount > 0){
+      targetGreen = 1; // correct for integer rounding, make sure that
+      // the first button press always provides feedback.
+    }
+    
+    timeNow = millis();
+    if (timeNow < lngLastPress){
+      // handle overflow
+    }
+    if ((timeNow-lngLastPress)<100){ // this is a very crude way of catching the transition from stable to blinking
+      ledAnimationState[i]=1;
+    }
+    if ((timeNow - lngLastPress)/1000 < maxBlinkDuration){
+      // this is the number of ms that are used for dimming and brightening.
+        //currentBlinkSpeed = ((((timeNow-lngLastPress)/1000)*(minBlinkSpeed-maxBlinkSpeed))/(maxBlinkDuration/2))+minBlinkSpeed;
+      currentBlinkSpeed = ((((timeNow-lngLastPress)/1000)*(minBlinkSpeed-maxBlinkSpeed))/(maxBlinkDuration))+maxBlinkSpeed;
+      deltaBlinkDimmer = (30*1000)/currentBlinkSpeed; // 30 ms is the frame rate, 1000 increases number size to reduce rounding error.
+      if (ledAnimationState[i] == 1){
+        blinkDimmer[i] = blinkDimmer[i] - deltaBlinkDimmer; // getting dimmer.
+      }
+      else if (ledAnimationState[i] == 2){ // getting brighter
+        blinkDimmer[i] = blinkDimmer[i] + deltaBlinkDimmer;
+      }
+      if (blinkDimmer[i] < 1){
+        blinkDimmer[i] = 0;
+        ledAnimationState[i] = 2;
+      }
+      else if (blinkDimmer[i] > 999){
+        blinkDimmer[i] = 1000;
+        ledAnimationState[i] = 1;
+      }
+      if (i == 8){
+        //Serial.print("blink dimmer: "); Serial.print(blinkDimmer[i]);Serial.print(" Animation State: "); Serial.println(ledAnimationState[i]);
+        //Serial.print("deltaBlinkDimmer: "); Serial.print(deltaBlinkDimmer); Serial.print(" currentBlinkSpeed: ");Serial.println(currentBlinkSpeed);
+      }
+      setRawPixel(i, (byte)((targetRed*blinkDimmer[i])/1000),(byte)((targetGreen*blinkDimmer[i])/1000),(byte)0);
+    }
+    else{
+      // lights are on
+      setRawPixel(i,(byte)targetRed,(byte)targetGreen,(byte)0);
+    }
+  }
+  gammaCorrect();
+  //Serial.println();
+  leds.show();
+}
+
+void setRawPixel(int pixel, byte red, byte green, byte blue){
+  rawDrawingMemory[pixel*3] = blue;
+  rawDrawingMemory[pixel*3+1] = green;
+  rawDrawingMemory[pixel*3+2] = red;
+}
+
+void gammaCorrect(){
+  for (int i = 0; i < numled*3; i++){
+    drawingMemory[i] = pgm_read_byte(&gamma8[rawDrawingMemory[i]]);
+    //leds.setPixel(i,rawDrawingMemory[i*3],rawDrawingMemory[i*3+1],rawDrawingMemory[i*3+2]);
   }
 }
+
+//int minBlinkSpeed = 3000; // max time in ms. that an LED will take to fade from on to off and back to on. after this time is reached,
+// the time held at on will begin to increase. once the time held on reaches maximum, the LED will convert to always on (ie, not blinking)
+//int maxBlinkSpeed = 500; // min time in ms. that an LED will take to fade from on to off and back to on. when blinkDuration is
+// at 0, this is the maximum speed at which the LED will blink.
+//int maxBlinkHold = 1000; // max time in ms. that an LED will stay on between blinks before just converting to always on
+//int maxBlinkDuration = 1000; // max time in seconds that an LED will blink for after the corresponding button is pressed.
 
 // saves all presets to disk. Could be more efficient and only save the ones that have changed, or swap up the address used
 // to prevent wear, but for this project we try to just not do it too often.
@@ -391,6 +503,12 @@ void interpretSerialCommands(){
       booDevMode = !booDevMode;
       if (booDevMode == true){Serial.println("Development mode now active");}
       else{Serial.println("Development mode turned off");}
+    }
+    else if (serialCommand == 'L'){ // scan lights for initial indexing purposes
+      leds.clear();
+      leds.show();
+      delay(3000);
+      colorWipe(RED,3000);
     }
   }
   while(Serial.available()>0){Serial.read();} // clear the buffer, we only respond to single characters

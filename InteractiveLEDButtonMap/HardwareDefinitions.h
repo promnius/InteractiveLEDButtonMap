@@ -24,7 +24,8 @@ int maxBlinkDuration = 60; // max time in seconds that an LED will blink for aft
 #define REGION1 47
 #define REGION2 42
 #define REGION3 32
-#define REGION4 33
+//#define REGION4 33
+#define REGION4 80
 
 // animation presets
 #define T1SCALE 30

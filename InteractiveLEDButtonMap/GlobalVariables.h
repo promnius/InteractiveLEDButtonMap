@@ -9,12 +9,13 @@
 #include <EEPROM.h>
 #include <WS2812Serial.h> 
 
-const int numled = 20;
+static const int numled = 20;
 
 // PIN DECLARATIONS
 const unsigned short pinHEARTBEAT = 9;
 const unsigned short pinCS_BUTTONS = 10;
 const unsigned short pinLEDDATA = 1;
+const unsigned short pinINPUTVOLTAGESENSE = 14;
 
 // VARIABLE DECLARATIONS
 

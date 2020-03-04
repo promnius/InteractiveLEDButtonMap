@@ -1,4 +1,5 @@
-// need to handle overflow from millis and math
+// on start-up, don't save if we have lost power
+// also need to be aware of a repeated brownout case, maybe re-check power after the color wipe?
 
 // Kyle Mayer
 // 8/28/2019
@@ -24,6 +25,7 @@ void setup() {
   loadStateFromDisk();
   leds.begin();
   colorWipe(RED,50);
+  delay(3000);
   leds.clear();
   leds.show();
   initializeTimers();

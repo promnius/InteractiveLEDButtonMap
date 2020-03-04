@@ -94,11 +94,17 @@ void updateLEDs(){
         targetGreen = (255*(long)intDisplayCount)/(intScaleRate/3); // linear increase in intensity
         targetRed = 0;
       }
-      else if (intDisplayCount < intScaleRate){ // second two thirds scales hue, intensity is max
+      else if (intDisplayCount < (intScaleRate*2)/3){ // second two thirds scales hue, intensity is max
         //Serial.print(":");Serial.print("R");
         intDisplayCount = intDisplayCount-(intScaleRate/3);
-        targetRed = (255*(long)intDisplayCount)/((intScaleRate*2)/3); // linear shift in hue
-        targetGreen = 255 - targetRed;
+        targetRed = (255*(long)intDisplayCount)/((intScaleRate)/3); // linear shift in hue
+        targetGreen = 255;
+      }
+      else if (intDisplayCount < intScaleRate){ // second two thirds scales hue, intensity is max
+        //Serial.print(":");Serial.print("R");
+        intDisplayCount = intDisplayCount-((intScaleRate*2)/3);
+        targetGreen = 255 - (255*(long)intDisplayCount)/((intScaleRate)/3); // linear shift in hue
+        targetRed = 255;
       }
       else{
         // beyond maximum

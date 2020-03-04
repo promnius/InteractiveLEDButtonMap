@@ -108,6 +108,7 @@ void checkButtons(){
   }   
 }
 
+int buttonCounter = 0;
 // if a button was just released, increment the appropriate counter.
 void interpretButtons(){
   for (int i=0; i<numButtons; i++){ //
@@ -116,6 +117,16 @@ void interpretButtons(){
       lngButtonLastPressedTime[i] = millis();
       lngButtonCounter[i]++;
       lngButtonDisplayCounter[i]++;
+
+      // TEMPORARY CODE FOR SETTING UP:
+      /*
+      buttonCounter ++;
+      leds.clear();
+      leds.setPixel(buttonCounter, RED);
+      leds.show();
+      delay(5000);
+      //colorWipe(RED,5000);
+      */
     }
   }
 }

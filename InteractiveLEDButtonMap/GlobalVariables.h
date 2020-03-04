@@ -9,7 +9,7 @@
 #include <EEPROM.h>
 #include <WS2812Serial.h> 
 
-static const int numled = 20;
+static const int numled = 262;
 
 // PIN DECLARATIONS
 const unsigned short pinHEARTBEAT = 9;
